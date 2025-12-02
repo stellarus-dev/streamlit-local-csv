@@ -100,13 +100,14 @@ def style_layout(fig, title=None, *, legend_pos="top-right", hide_grid=True, bot
 # ---------- Data loader from CSV ----------
 @st.cache_data
 def load_data_from_csv() -> pd.DataFrame:
-    """Load data from CSV file"""
+    """Load data from API"""
     try:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        csv_path = os.path.join(script_dir, "data.csv")
-        df = pd.read_csv(csv_path)
+        response = requests.get('http://localhost:8000/events')
+        response.raise_for_status()  # Raise an error for bad status codes
+        data = response.json()
+        df = pd.DataFrame(data['events'])
     except Exception as e:
-        st.error(f"Error loading CSV file: {str(e)}")
+        st.error(f"Error loading data from API: {str(e)}")
         return pd.DataFrame()
     
     if df.empty:
