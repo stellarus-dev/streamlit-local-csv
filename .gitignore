@@ -22,3 +22,8 @@ antenv/
 # OS
 .DS_Store
 Thumbs.db
+
+# Backup files
+streamlit_csv_backup.py
+streamlit_csv_fixed.py
+streamlit_csv_new.py
