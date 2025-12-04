@@ -102,7 +102,7 @@ def style_layout(fig, title=None, *, legend_pos="top-right", hide_grid=True, bot
 def load_data_from_csv() -> pd.DataFrame:
     """Load data from API"""
     try:
-        response = requests.get('http://localhost:8000/events')
+        response = requests.get('https://dev-analytics-api-lwapp-stlus-ncus.azurewebsites.net/events')
         response.raise_for_status()  # Raise an error for bad status codes
         data = response.json()
         df = pd.DataFrame(data['events'])
