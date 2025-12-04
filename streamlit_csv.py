@@ -93,7 +93,12 @@ def style_layout(fig, title=None, *, legend_pos="top-right", hide_grid=True, bot
         legend=legend,
         height=height
     )
-    fig.update_xaxes(showgrid=(not hide_grid), gridcolor=BRAND["border"])
+    fig.update_xaxes(
+        showgrid=(not hide_grid), 
+        gridcolor=BRAND["border"],
+        dtick="M1",
+        tickformat="%b %Y"
+    )
     fig.update_yaxes(showgrid=(not hide_grid), gridcolor=BRAND["border"])
     return fig
 
@@ -166,8 +171,6 @@ def load_data_from_csv() -> pd.DataFrame:
         # Map variants like IN_BOUND_CROSSOVER -> crossover, CARE_PROGRAM_CLICKED -> link_click
         mapping = {
             "IN_BOUND_CROSSOVER": "crossover",
-            "CROSSOVER": "crossover",
-            "link_click": "link_click",
             "CARE_PROGRAM_CLICKED": "link_click",
         }
         et = df["event_type"].astype("string").str.strip()
