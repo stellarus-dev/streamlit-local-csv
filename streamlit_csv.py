@@ -162,7 +162,17 @@ def load_data_from_csv() -> pd.DataFrame:
     if "event_timestamp" in df.columns:
         df["event_timestamp"] = pd.to_datetime(df["event_timestamp"], errors="coerce")
     if "event_type" in df.columns:
-        df["event_type"] = df["event_type"].astype("string").str.strip().str.lower()
+        # Normalize incoming event types to our canonical set
+        # Map variants like IN_BOUND_CROSSOVER -> crossover, CARE_PROGRAM_CLICKED -> link_click
+        mapping = {
+            "IN_BOUND_CROSSOVER": "crossover",
+            "CROSSOVER": "crossover",
+            "link_click": "link_click",
+            "CARE_PROGRAM_CLICKED": "link_click",
+        }
+        et = df["event_type"].astype("string").str.strip()
+        normalized = et.str.upper().map(mapping).fillna(et.str.lower())
+        df["event_type"] = normalized
     
     return df
 
