@@ -63,4 +63,4 @@ jobs:
         with:
           app-name: 'app-mhr-exp-cus-test'
           slot-name: 'Production'
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_24893A4249F7414CBA11FC95F73CC637 }}
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_DDBE9725790B40899921F76714DEC044 }}
