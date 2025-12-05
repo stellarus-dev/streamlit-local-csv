@@ -186,9 +186,6 @@ if data.empty:
     st.error("❌ No data available from CSV file")
     st.stop()
 
-# Filter to Kansas only (if state column exists)
-if "state" in data.columns:
-    data = data.loc[data["state"].astype("string").str.lower().isin(["kansas","ks"])].copy()
 
 # ---------- Header ----------
 st.markdown(f"""
@@ -220,13 +217,18 @@ def options_from(df, primary, fallback=None):
         return ["All"] + vals
     return ["All"]
 
-min_d, max_d = pd.to_datetime(data["event_date"]).min(), pd.to_datetime(data["event_date"]).max()
-if pd.isna(min_d) or pd.isna(max_d):
-    min_d = pd.Timestamp("2024-11-01"); max_d = min_d + pd.offsets.MonthEnd(11)
+min_d = pd.Timestamp.now() - pd.DateOffset(months=12)
+max_d = pd.Timestamp.now()
 
 frow = st.columns([1.5, 1.5, 2])
 dr = frow[0].date_input("Date Range", (min_d, max_d), min_value=min_d, max_value=max_d)
-start_d, end_d = (pd.to_datetime(dr[0]), pd.to_datetime(dr[1])) if isinstance(dr, tuple) else (min_d, max_d)
+
+# Handle incomplete date range selection - keep using default until both dates are selected
+if isinstance(dr, tuple) and len(dr) == 2:
+    start_d, end_d = pd.to_datetime(dr[0]), pd.to_datetime(dr[1])
+else:
+    # User is still selecting dates - use the full range to avoid errors
+    start_d, end_d = min_d, max_d
 
 browser = frow[1].selectbox("Browser", options_from(data, "browser"), index=0)
 
