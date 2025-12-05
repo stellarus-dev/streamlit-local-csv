@@ -104,7 +104,7 @@ def style_layout(fig, title=None, *, legend_pos="top-right", hide_grid=True, bot
 
 # ---------- Data loader from CSV ----------
 @st.cache_data
-def load_data_from_csv() -> pd.DataFrame:
+def load_data_from_api() -> pd.DataFrame:
     """Load data from API"""
     try:
         response = requests.get('https://dev-analytics-api-lwapp-stlus-ncus.azurewebsites.net/events')
@@ -180,11 +180,15 @@ def load_data_from_csv() -> pd.DataFrame:
     return df
 
 # ---------- Load data ----------
-data = load_data_from_csv()
+data = load_data_from_api()
 
 if data.empty:
     st.error("❌ No data available from CSV file")
     st.stop()
+
+if st.button("Refresh Data", type="secondary"):
+    st.cache_data.clear()
+    st.rerun()
 
 
 # ---------- Header ----------
