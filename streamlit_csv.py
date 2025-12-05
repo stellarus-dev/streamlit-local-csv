@@ -270,10 +270,10 @@ cur_counts = counts_for_window(start_d, end_d)
 # Calculate conversion percentage
 conversion_pct = (cur_counts["link_click"] / cur_counts["crossover"] * 100) if cur_counts["crossover"] > 0 else 0
 
-# ---------- KPI tiles (Website Crossovers, Link Clicks, and Click Conversion) ----------
+# ---------- KPI tiles (Website Crossovers, Wellness Programs, and Click Conversion) ----------
 KPI = [
     ("Website Crossovers", "🌐", cur_counts["crossover"], False),
-    ("Link Clicks",        "🔗", cur_counts["link_click"], False),
+    ("Wellness Programs",  "🔗", cur_counts["link_click"], False),
     ("Click Conversion",   "", conversion_pct, True),
 ]
 k1, k2, k3 = st.columns(3)
@@ -294,7 +294,7 @@ for col, (label, icon, cur, is_percent) in zip([k1, k2, k3], KPI):
 left, main = st.columns([0.23, 1], gap="large")
 with left:
     st.markdown('<div class="left-radio">', unsafe_allow_html=True)
-    tab = st.radio("Navigation", ["Executive Overview", "Website Crossovers", "Link Clicks"], index=0)
+    tab = st.radio("Navigation", ["Executive Overview", "Website Crossovers", "Wellness Programs"], index=0)
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------- Helpers ----------
@@ -332,7 +332,7 @@ with main:
         
         # Merge the two dataframes
         monthly_data = crossover_monthly.merge(link_click_monthly, on="period", how="outer", suffixes=("_crossover", "_click")).fillna(0)
-        monthly_data.columns = ["period", "Website Crossovers", "Link Clicks"]
+        monthly_data.columns = ["period", "Website Crossovers", "Wellness Programs"]
         
         # Create overlapping bar chart
         fig = go.Figure()
@@ -346,17 +346,17 @@ with main:
             hovertemplate="<b>%{x|%b %Y}</b><br>Website Crossovers: %{y:,.0f}<extra></extra>"
         ))
         
-        # Add Link Clicks bars (darker color, in the front, overlapping)
+        # Add Wellness Programs bars (darker color, in the front, overlapping)
         fig.add_trace(go.Bar(
             x=monthly_data["period"],
-            y=monthly_data["Link Clicks"],
-            name="Link Clicks",
+            y=monthly_data["Wellness Programs"],
+            name="Wellness Programs",
             marker=dict(color=BRAND["primary"]),
-            hovertemplate="<b>%{x|%b %Y}</b><br>Link Clicks: %{y:,.0f}<extra></extra>"
+            hovertemplate="<b>%{x|%b %Y}</b><br>Wellness Programs: %{y:,.0f}<extra></extra>"
         ))
         
         # Add Conversion Rate line on secondary axis
-        conversion_rate = (monthly_data["Link Clicks"] / monthly_data["Website Crossovers"] * 100).fillna(0)
+        conversion_rate = (monthly_data["Wellness Programs"] / monthly_data["Website Crossovers"] * 100).fillna(0)
         fig.add_trace(go.Scatter(
             x=monthly_data["period"],
             y=conversion_rate,
@@ -375,7 +375,7 @@ with main:
                 overlaying="y",
                 side="right",
                 showgrid=False,
-                range=[0, 100]
+                range=[0, 105]
             ),
             margin=dict(l=60, r=90, t=60, b=100),
             xaxis=dict(tickangle=-45, showgrid=False)
@@ -392,8 +392,10 @@ with main:
             crossover_monthly = get_unique_ids_by_month(df, "crossover")
             
             fig = smooth_line(crossover_monthly, ["unique_ids"], 
-                            "Website Crossovers (Unique IDs per Month)", 
+                            "Website Crossovers Trend", 
                             color_seq=[BRAND["primary"]], height=PLOT_HEIGHT)
+            fig.update_yaxes(title="Unique Users")
+            fig.update_layout(showlegend=False)
             st.plotly_chart(fig, width="stretch")
         
         with w2:
@@ -421,14 +423,17 @@ with main:
             fig = style_layout(fig, "Crossovers by Browser", bottom_legend=True, height=PLOT_HEIGHT)
             st.plotly_chart(fig, width="stretch")
 
-    elif tab == "Link Clicks":
+    elif tab == "Wellness Programs":
         a1, a2 = st.columns([1.2, 0.9])
         
         with a1:
-            # Trending line chart of link clicks to Virta and Kansas using program_destination column
+            # Trending line chart of wellness programs to Virta and Kansas using program_destination column
             link_click_df = df[df["event_type"].astype("string").str.lower() == "link_click"].copy() if "event_type" in df.columns else df.copy()
             
             if "program_destination" in link_click_df.columns and link_click_df["program_destination"].notna().any():
+                # Group PR2 with Kansas
+                link_click_df["program_destination"] = link_click_df["program_destination"].replace({"PR2": "Kansas"})
+                
                 # Get monthly unique IDs by program_destination
                 monthly_dest = (link_click_df.assign(period=link_click_df["event_date"].dt.to_period("M").dt.to_timestamp())
                                              .groupby(["period", "program_destination"])["user_id"].nunique().reset_index(name="unique_ids"))
@@ -476,7 +481,7 @@ with main:
             fig.update_layout(
                 margin=dict(l=50, r=50, t=60, b=70)
             )
-            fig = style_layout(fig, "Link Clicks Trends", legend_pos="top-right", hide_grid=True, height=PLOT_HEIGHT, bottom_legend=True)
+            fig = style_layout(fig, "Wellness Programs Trend", legend_pos="top-right", hide_grid=True, height=PLOT_HEIGHT, bottom_legend=True)
             st.plotly_chart(fig, width="stretch")
         
         with a2:
@@ -484,6 +489,9 @@ with main:
             link_click_df = df[df["event_type"].astype("string").str.lower() == "link_click"].copy() if "event_type" in df.columns else df.copy()
             
             if "program_destination" in link_click_df.columns and link_click_df["program_destination"].notna().any():
+                # Group PR2 with Kansas
+                link_click_df["program_destination"] = link_click_df["program_destination"].replace({"PR2": "Kansas"})
+                
                 # Count unique IDs by program_destination
                 dest_data = (link_click_df.groupby("program_destination")["user_id"].nunique().reset_index(name="unique_ids")
                                           .sort_values("unique_ids", ascending=False))
@@ -508,5 +516,5 @@ with main:
             fig.update_layout(
                 margin=dict(l=20, r=20, t=60, b=70)
             )
-            fig = style_layout(fig, "Link Clicks by Program", bottom_legend=True, height=PLOT_HEIGHT)
+            fig = style_layout(fig, "Wellness Programs by Program", bottom_legend=True, height=PLOT_HEIGHT)
             st.plotly_chart(fig, width="stretch")
