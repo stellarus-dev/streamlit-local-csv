@@ -431,8 +431,8 @@ with main:
             link_click_df = df[df["event_type"].astype("string").str.lower() == "link_click"].copy() if "event_type" in df.columns else df.copy()
             
             if "program_destination" in link_click_df.columns and link_click_df["program_destination"].notna().any():
-                # Group PR2 with Kansas
-                link_click_df["program_destination"] = link_click_df["program_destination"].replace({"PR2": "Kansas"})
+                # Group PR2 with Kansas and PR1 with Virta
+                link_click_df["program_destination"] = link_click_df["program_destination"].replace({"PR2": "Kansas", "PR1": "Virta"})
                 
                 # Get monthly unique IDs by program_destination
                 monthly_dest = (link_click_df.assign(period=link_click_df["event_date"].dt.to_period("M").dt.to_timestamp())
@@ -489,8 +489,8 @@ with main:
             link_click_df = df[df["event_type"].astype("string").str.lower() == "link_click"].copy() if "event_type" in df.columns else df.copy()
             
             if "program_destination" in link_click_df.columns and link_click_df["program_destination"].notna().any():
-                # Group PR2 with Kansas
-                link_click_df["program_destination"] = link_click_df["program_destination"].replace({"PR2": "Kansas"})
+                # Group PR2 with Kansas and PR1 with Virta
+                link_click_df["program_destination"] = link_click_df["program_destination"].replace({"PR2": "Kansas", "PR1": "Virta"})
                 
                 # Count unique IDs by program_destination
                 dest_data = (link_click_df.groupby("program_destination")["user_id"].nunique().reset_index(name="unique_ids")
