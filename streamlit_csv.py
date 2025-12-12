@@ -246,24 +246,33 @@ df = data.loc[base_mask & data["event_date"].between(start_d, end_d)].copy()
 # ---------- KPI + Funnel inference ----------
 EXPECTED = {"crossover","link_click","signup","improvement"}
 
-def compute_counts(frame: pd.DataFrame):
-    if "event_type" in frame.columns and frame["event_type"].dropna().isin(EXPECTED).any():
-        c = frame["event_type"].value_counts()
+def compute_unique_user_counts(frame: pd.DataFrame):
+    """Compute unique user counts by event type"""
+    if "event_type" not in frame.columns or "user_id" not in frame.columns:
+        # Fallback to row counts if columns don't exist
         return {
-            "crossover": int(c.get("crossover", 0)),
-            "link_click": int(c.get("link_click", 0)),
-            "signup":    int(c.get("signup", 0)),
-            "improve":   int(c.get("improvement", 0)),
+            "crossover": len(frame),
+            "link_click": 0,
+            "signup": 0,
+            "improve": 0,
         }
-    total = len(frame)
-    clicks = int(frame["traffic_source"].notna().sum()) if "traffic_source" in frame.columns else int(0.33*total)
-    signups = int(0.05*total)
-    improve = 0
-    return {"crossover": total, "link_click": clicks, "signup": signups, "improve": improve}
+    
+    # Count unique users by event type
+    crossover_users = frame[frame["event_type"] == "crossover"]["user_id"].nunique()
+    link_click_users = frame[frame["event_type"] == "link_click"]["user_id"].nunique()
+    signup_users = frame[frame["event_type"] == "signup"]["user_id"].nunique()
+    improve_users = frame[frame["event_type"] == "improvement"]["user_id"].nunique()
+    
+    return {
+        "crossover": int(crossover_users),
+        "link_click": int(link_click_users),
+        "signup": int(signup_users),
+        "improve": int(improve_users),
+    }
 
 def counts_for_window(s, e):
     frame = data.loc[base_mask & data["event_date"].between(s, e)]
-    return compute_counts(frame)
+    return compute_unique_user_counts(frame)
 
 cur_counts = counts_for_window(start_d, end_d)
 
