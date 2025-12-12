@@ -93,20 +93,26 @@ def style_layout(fig, title=None, *, legend_pos="top-right", hide_grid=True, bot
         legend=legend,
         height=height
     )
-    fig.update_xaxes(showgrid=(not hide_grid), gridcolor=BRAND["border"])
+    fig.update_xaxes(
+        showgrid=(not hide_grid), 
+        gridcolor=BRAND["border"],
+        dtick="M1",
+        tickformat="%b %Y"
+    )
     fig.update_yaxes(showgrid=(not hide_grid), gridcolor=BRAND["border"])
     return fig
 
 # ---------- Data loader from CSV ----------
 @st.cache_data
-def load_data_from_csv() -> pd.DataFrame:
-    """Load data from CSV file"""
+def load_data_from_api() -> pd.DataFrame:
+    """Load data from API"""
     try:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        csv_path = os.path.join(script_dir, "data.csv")
-        df = pd.read_csv(csv_path)
+        response = requests.get('https://dev-analytics-api-lwapp-stlus-ncus.azurewebsites.net/events')
+        response.raise_for_status()  # Raise an error for bad status codes
+        data = response.json()
+        df = pd.DataFrame(data['events'])
     except Exception as e:
-        st.error(f"Error loading CSV file: {str(e)}")
+        st.error(f"Error loading data from API: {str(e)}")
         return pd.DataFrame()
     
     if df.empty:
@@ -161,20 +167,29 @@ def load_data_from_csv() -> pd.DataFrame:
     if "event_timestamp" in df.columns:
         df["event_timestamp"] = pd.to_datetime(df["event_timestamp"], errors="coerce")
     if "event_type" in df.columns:
-        df["event_type"] = df["event_type"].astype("string").str.strip().str.lower()
+        # Normalize incoming event types to our canonical set
+        # Map variants like IN_BOUND_CROSSOVER -> crossover, CARE_PROGRAM_CLICKED -> link_click
+        mapping = {
+            "IN_BOUND_CROSSOVER": "crossover",
+            "CARE_PROGRAM_CLICKED": "link_click",
+        }
+        et = df["event_type"].astype("string").str.strip()
+        normalized = et.str.upper().map(mapping).fillna(et.str.lower())
+        df["event_type"] = normalized
     
     return df
 
 # ---------- Load data ----------
-data = load_data_from_csv()
+data = load_data_from_api()
 
 if data.empty:
     st.error("❌ No data available from CSV file")
     st.stop()
 
-# Filter to Kansas only (if state column exists)
-if "state" in data.columns:
-    data = data.loc[data["state"].astype("string").str.lower().isin(["kansas","ks"])].copy()
+if st.button("Refresh Data", type="secondary"):
+    st.cache_data.clear()
+    st.rerun()
+
 
 # ---------- Header ----------
 st.markdown(f"""
@@ -206,13 +221,18 @@ def options_from(df, primary, fallback=None):
         return ["All"] + vals
     return ["All"]
 
-min_d, max_d = pd.to_datetime(data["event_date"]).min(), pd.to_datetime(data["event_date"]).max()
-if pd.isna(min_d) or pd.isna(max_d):
-    min_d = pd.Timestamp("2024-11-01"); max_d = min_d + pd.offsets.MonthEnd(11)
+min_d = pd.Timestamp.now() - pd.DateOffset(months=12)
+max_d = pd.Timestamp.now()
 
 frow = st.columns([1.5, 1.5, 2])
 dr = frow[0].date_input("Date Range", (min_d, max_d), min_value=min_d, max_value=max_d)
-start_d, end_d = (pd.to_datetime(dr[0]), pd.to_datetime(dr[1])) if isinstance(dr, tuple) else (min_d, max_d)
+
+# Handle incomplete date range selection - keep using default until both dates are selected
+if isinstance(dr, tuple) and len(dr) == 2:
+    start_d, end_d = pd.to_datetime(dr[0]), pd.to_datetime(dr[1])
+else:
+    # User is still selecting dates - use the full range to avoid errors
+    start_d, end_d = min_d, max_d
 
 browser = frow[1].selectbox("Browser", options_from(data, "browser"), index=0)
 
@@ -226,34 +246,43 @@ df = data.loc[base_mask & data["event_date"].between(start_d, end_d)].copy()
 # ---------- KPI + Funnel inference ----------
 EXPECTED = {"crossover","link_click","signup","improvement"}
 
-def compute_counts(frame: pd.DataFrame):
-    if "event_type" in frame.columns and frame["event_type"].dropna().isin(EXPECTED).any():
-        c = frame["event_type"].value_counts()
+def compute_unique_user_counts(frame: pd.DataFrame):
+    """Compute unique user counts by event type"""
+    if "event_type" not in frame.columns or "user_id" not in frame.columns:
+        # Fallback to row counts if columns don't exist
         return {
-            "crossover": int(c.get("crossover", 0)),
-            "link_click": int(c.get("link_click", 0)),
-            "signup":    int(c.get("signup", 0)),
-            "improve":   int(c.get("improvement", 0)),
+            "crossover": len(frame),
+            "link_click": 0,
+            "signup": 0,
+            "improve": 0,
         }
-    total = len(frame)
-    clicks = int(frame["traffic_source"].notna().sum()) if "traffic_source" in frame.columns else int(0.33*total)
-    signups = int(0.05*total)
-    improve = 0
-    return {"crossover": total, "link_click": clicks, "signup": signups, "improve": improve}
+    
+    # Count unique users by event type
+    crossover_users = frame[frame["event_type"] == "crossover"]["user_id"].nunique()
+    link_click_users = frame[frame["event_type"] == "link_click"]["user_id"].nunique()
+    signup_users = frame[frame["event_type"] == "signup"]["user_id"].nunique()
+    improve_users = frame[frame["event_type"] == "improvement"]["user_id"].nunique()
+    
+    return {
+        "crossover": int(crossover_users),
+        "link_click": int(link_click_users),
+        "signup": int(signup_users),
+        "improve": int(improve_users),
+    }
 
 def counts_for_window(s, e):
     frame = data.loc[base_mask & data["event_date"].between(s, e)]
-    return compute_counts(frame)
+    return compute_unique_user_counts(frame)
 
 cur_counts = counts_for_window(start_d, end_d)
 
 # Calculate conversion percentage
 conversion_pct = (cur_counts["link_click"] / cur_counts["crossover"] * 100) if cur_counts["crossover"] > 0 else 0
 
-# ---------- KPI tiles (Website Crossovers, Link Clicks, and Click Conversion) ----------
+# ---------- KPI tiles (Website Crossovers, Wellness Programs, and Click Conversion) ----------
 KPI = [
     ("Website Crossovers", "🌐", cur_counts["crossover"], False),
-    ("Link Clicks",        "🔗", cur_counts["link_click"], False),
+    ("Wellness Programs",  "🔗", cur_counts["link_click"], False),
     ("Click Conversion",   "", conversion_pct, True),
 ]
 k1, k2, k3 = st.columns(3)
@@ -274,7 +303,7 @@ for col, (label, icon, cur, is_percent) in zip([k1, k2, k3], KPI):
 left, main = st.columns([0.23, 1], gap="large")
 with left:
     st.markdown('<div class="left-radio">', unsafe_allow_html=True)
-    tab = st.radio("Navigation", ["Executive Overview", "Website Crossovers", "Link Clicks"], index=0)
+    tab = st.radio("Navigation", ["Executive Overview", "Website Crossovers", "Wellness Programs"], index=0)
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------- Helpers ----------
@@ -312,7 +341,7 @@ with main:
         
         # Merge the two dataframes
         monthly_data = crossover_monthly.merge(link_click_monthly, on="period", how="outer", suffixes=("_crossover", "_click")).fillna(0)
-        monthly_data.columns = ["period", "Website Crossovers", "Link Clicks"]
+        monthly_data.columns = ["period", "Website Crossovers", "Wellness Programs"]
         
         # Create overlapping bar chart
         fig = go.Figure()
@@ -326,17 +355,17 @@ with main:
             hovertemplate="<b>%{x|%b %Y}</b><br>Website Crossovers: %{y:,.0f}<extra></extra>"
         ))
         
-        # Add Link Clicks bars (darker color, in the front, overlapping)
+        # Add Wellness Programs bars (darker color, in the front, overlapping)
         fig.add_trace(go.Bar(
             x=monthly_data["period"],
-            y=monthly_data["Link Clicks"],
-            name="Link Clicks",
+            y=monthly_data["Wellness Programs"],
+            name="Wellness Programs",
             marker=dict(color=BRAND["primary"]),
-            hovertemplate="<b>%{x|%b %Y}</b><br>Link Clicks: %{y:,.0f}<extra></extra>"
+            hovertemplate="<b>%{x|%b %Y}</b><br>Wellness Programs: %{y:,.0f}<extra></extra>"
         ))
         
         # Add Conversion Rate line on secondary axis
-        conversion_rate = (monthly_data["Link Clicks"] / monthly_data["Website Crossovers"] * 100).fillna(0)
+        conversion_rate = (monthly_data["Wellness Programs"] / monthly_data["Website Crossovers"] * 100).fillna(0)
         fig.add_trace(go.Scatter(
             x=monthly_data["period"],
             y=conversion_rate,
@@ -355,7 +384,7 @@ with main:
                 overlaying="y",
                 side="right",
                 showgrid=False,
-                range=[0, 100]
+                range=[0, 105]
             ),
             margin=dict(l=60, r=90, t=60, b=100),
             xaxis=dict(tickangle=-45, showgrid=False)
@@ -372,8 +401,10 @@ with main:
             crossover_monthly = get_unique_ids_by_month(df, "crossover")
             
             fig = smooth_line(crossover_monthly, ["unique_ids"], 
-                            "Website Crossovers (Unique IDs per Month)", 
+                            "Website Crossovers Trend", 
                             color_seq=[BRAND["primary"]], height=PLOT_HEIGHT)
+            fig.update_yaxes(title="Unique Users")
+            fig.update_layout(showlegend=False)
             st.plotly_chart(fig, width="stretch")
         
         with w2:
@@ -401,14 +432,17 @@ with main:
             fig = style_layout(fig, "Crossovers by Browser", bottom_legend=True, height=PLOT_HEIGHT)
             st.plotly_chart(fig, width="stretch")
 
-    elif tab == "Link Clicks":
+    elif tab == "Wellness Programs":
         a1, a2 = st.columns([1.2, 0.9])
         
         with a1:
-            # Trending line chart of link clicks to Virta and Kansas using program_destination column
+            # Trending line chart of wellness programs to Virta and Kansas using program_destination column
             link_click_df = df[df["event_type"].astype("string").str.lower() == "link_click"].copy() if "event_type" in df.columns else df.copy()
             
             if "program_destination" in link_click_df.columns and link_click_df["program_destination"].notna().any():
+                # Group PR2 with Kansas and PR1 with Virta
+                link_click_df["program_destination"] = link_click_df["program_destination"].replace({"PR2": "Kansas", "PR1": "Virta"})
+                
                 # Get monthly unique IDs by program_destination
                 monthly_dest = (link_click_df.assign(period=link_click_df["event_date"].dt.to_period("M").dt.to_timestamp())
                                              .groupby(["period", "program_destination"])["user_id"].nunique().reset_index(name="unique_ids"))
@@ -456,7 +490,7 @@ with main:
             fig.update_layout(
                 margin=dict(l=50, r=50, t=60, b=70)
             )
-            fig = style_layout(fig, "Link Clicks Trends", legend_pos="top-right", hide_grid=True, height=PLOT_HEIGHT, bottom_legend=True)
+            fig = style_layout(fig, "Wellness Programs Trend", legend_pos="top-right", hide_grid=True, height=PLOT_HEIGHT, bottom_legend=True)
             st.plotly_chart(fig, width="stretch")
         
         with a2:
@@ -464,6 +498,9 @@ with main:
             link_click_df = df[df["event_type"].astype("string").str.lower() == "link_click"].copy() if "event_type" in df.columns else df.copy()
             
             if "program_destination" in link_click_df.columns and link_click_df["program_destination"].notna().any():
+                # Group PR2 with Kansas and PR1 with Virta
+                link_click_df["program_destination"] = link_click_df["program_destination"].replace({"PR2": "Kansas", "PR1": "Virta"})
+                
                 # Count unique IDs by program_destination
                 dest_data = (link_click_df.groupby("program_destination")["user_id"].nunique().reset_index(name="unique_ids")
                                           .sort_values("unique_ids", ascending=False))
@@ -488,5 +525,5 @@ with main:
             fig.update_layout(
                 margin=dict(l=20, r=20, t=60, b=70)
             )
-            fig = style_layout(fig, "Link Clicks by Program", bottom_legend=True, height=PLOT_HEIGHT)
+            fig = style_layout(fig, "Wellness Programs by Program", bottom_legend=True, height=PLOT_HEIGHT)
             st.plotly_chart(fig, width="stretch")
